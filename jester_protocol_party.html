@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jester: Protocol — Grup Yönetimi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Teko:wght@400;500;600;700&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+
+  /* ===========================================================
+     TOKENS
+  =========================================================== */
+  :root{
+    --c-void:        #06070a;
+    --c-gunmetal:     #14171a;
+    --c-panel-glass: rgba(14, 16, 18, 0.55);
+    --c-panel-glass-soft: rgba(20, 22, 25, 0.4);
+    --c-line:        #292d30;
+    --c-line-soft:   rgba(255,255,255,0.06);
+    --c-red:         #ff2440;
+    --c-red-dim:     #8f1424;
+    --c-red-glow:    rgba(255,36,64,0.55);
+    --c-green:       #29ffa0;
+    --c-text:        #e7e9ea;
+    --c-text-dim:    #7c8388;
+    --c-text-faint:  #454a4d;
+    --c-disabled:    #3a3d40;
+
+    --f-display: 'Teko', sans-serif;
+    --f-body:    'Rajdhani', sans-serif;
+
+    --cut: 14px;
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  ::selection{ background:var(--c-red); color:#000; }
+
+  html, body{
+    height:100%; width:100%;
+    background:var(--c-void);
+    font-family:var(--f-body);
+    color:var(--c-text);
+    overflow:hidden;
+  }
+
+  :focus-visible{ outline:2px solid var(--c-red); outline-offset:3px; }
+
+  @media (prefers-reduced-motion: reduce){
+    *, *::before, *::after{
+      animation-duration:0.001ms !important;
+      animation-iteration-count:1 !important;
+      transition-duration:0.001ms !important;
+    }
+  }
+
+  button{ font-family:inherit; }
+
+  /* ===========================================================
+     BACKDROP
+  =========================================================== */
+  .arena{
+    position:relative;
+    width:100vw; height:100vh;
+    background:
+      radial-gradient(ellipse 120% 80% at 50% 0%, rgba(139,10,25,0.16), transparent 55%),
+      radial-gradient(ellipse 140% 100% at 50% 100%, rgba(18,4,6,0.6), transparent 60%),
+      linear-gradient(180deg, #0b0c0e 0%, #08090a 55%, #050506 100%);
+  }
+
+  .grid-layer{
+    position:absolute; inset:0;
+    background-image:
+      linear-gradient(var(--c-line-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--c-line-soft) 1px, transparent 1px);
+    background-size:64px 64px;
+    -webkit-mask-image: radial-gradient(ellipse 75% 75% at 50% 45%, black 20%, transparent 85%);
+            mask-image: radial-gradient(ellipse 75% 75% at 50% 45%, black 20%, transparent 85%);
+    opacity:0.5;
+    pointer-events:none;
+  }
+
+  .scanlines{
+    position:absolute; inset:0;
+    background:repeating-linear-gradient(to bottom, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 1px, transparent 2px, transparent 3px);
+    mix-blend-mode:overlay;
+    opacity:0.5;
+    pointer-events:none;
+  }
+
+  .vignette{
+    position:absolute; inset:0;
+    box-shadow:inset 0 0 220px 60px rgba(0,0,0,0.85);
+    pointer-events:none;
+  }
+
+  .reticle-frame{ position:absolute; inset:26px; pointer-events:none; z-index:5; }
+  .bracket{ position:absolute; width:40px; height:40px; border:2px solid var(--c-red); opacity:0.75; }
+  .bracket::after{ content:''; position:absolute; width:5px; height:5px; background:var(--c-red); box-shadow:0 0 8px 2px var(--c-red); }
+  .bracket.tl{ top:0; left:0; border-right:none; border-bottom:none; } .bracket.tl::after{ top:-2px; left:-2px; }
+  .bracket.tr{ top:0; right:0; border-left:none; border-bottom:none; } .bracket.tr::after{ top:-2px; right:-2px; }
+  .bracket.bl{ bottom:0; left:0; border-right:none; border-top:none; } .bracket.bl::after{ bottom:-2px; left:-2px; }
+  .bracket.br{ bottom:0; right:0; border-left:none; border-top:none; } .bracket.br::after{ bottom:-2px; right:-2px; }
+
+  /* ===========================================================
+     TOP LOGO (compact)
+  =========================================================== */
+  .logo-mark{
+    position:absolute;
+    top:34px; left:42px;
+    z-index:10;
+    display:flex;
+    align-items:baseline;
+    gap:8px;
+  }
+  .logo-mark .word{
+    font-family:var(--f-display);
+    font-size:30px;
+    font-weight:600;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:#f0f1f2;
+    text-shadow:0 0 20px rgba(255,36,64,0.3);
+  }
+  .logo-mark .word .accent{
+    color:var(--c-red);
+    text-shadow:0 0 12px rgba(255,36,64,0.85);
+  }
+  .logo-mark .sub{
+    font-size:10px;
+    letter-spacing:4px;
+    color:var(--c-text-faint);
+    text-transform:uppercase;
+    padding-bottom:5px;
+  }
+
+  /* ===========================================================
+     PARTY INFO PANEL — top right, hidden until party active
+  =========================================================== */
+  .party-info{
+    position:absolute;
+    top:34px; right:42px;
+    z-index:10;
+    width:230px;
+    background:var(--c-panel-glass);
+    backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px);
+    border:1px solid var(--c-line);
+    border-left:3px solid var(--c-red);
+    clip-path:polygon(0 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%);
+    box-shadow:0 8px 30px rgba(0,0,0,0.5);
+    opacity:0;
+    transform:translateY(-10px);
+    pointer-events:none;
+    transition:opacity 0.35s ease, transform 0.35s ease;
+  }
+  .party-info.is-active{
+    opacity:1;
+    transform:translateY(0);
+    pointer-events:auto;
+  }
+
+  .party-info .head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:12px 16px;
+    border-bottom:1px solid var(--c-line-soft);
+  }
+  .party-info .head .label{
+    font-size:11px;
+    letter-spacing:3px;
+    color:var(--c-text-dim);
+    text-transform:uppercase;
+  }
+  .party-status-dot{
+    width:8px; height:8px;
+    border-radius:50%;
+    background:var(--c-green);
+    box-shadow:0 0 8px 2px rgba(41,255,160,0.7);
+    flex-shrink:0;
+  }
+
+  .party-info .code-row{
+    padding:14px 16px 16px;
+  }
+  .party-info .code-row .code-label{
+    font-size:10px;
+    letter-spacing:2px;
+    color:var(--c-text-faint);
+    text-transform:uppercase;
+    display:block;
+    margin-bottom:6px;
+  }
+  .party-info .code-value{
+    font-family:var(--f-display);
+    font-size:34px;
+    font-weight:600;
+    letter-spacing:8px;
+    color:var(--c-red);
+    text-shadow:0 0 16px rgba(255,36,64,0.55);
+  }
+
+  .party-info .members{
+    display:flex;
+    gap:6px;
+    padding:0 16px 16px;
+  }
+  .member-chip{
+    flex:1;
+    padding:7px 0;
+    text-align:center;
+    font-size:11px;
+    letter-spacing:1px;
+    color:var(--c-text-dim);
+    background:rgba(255,255,255,0.03);
+    border:1px solid var(--c-line-soft);
+    text-transform:uppercase;
+  }
+  .member-chip.filled{ color:var(--c-text); border-color:var(--c-red-dim); }
+  .member-chip.you{ color:var(--c-red); border-color:var(--c-red-dim); }
+
+  .leave-btn{
+    width:100%;
+    padding:10px;
+    background:transparent;
+    border:none;
+    border-top:1px solid var(--c-line-soft);
+    color:var(--c-text-faint);
+    font-family:var(--f-body);
+    font-size:11px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    cursor:pointer;
+    transition:color 0.2s ease, background 0.2s ease;
+  }
+  .leave-btn:hover{ color:var(--c-red); background:rgba(255,36,64,0.06); }
+
+  /* ===========================================================
+     CENTER CONSOLE
+  =========================================================== */
+  .console{
+    position:absolute;
+    top:50%; left:50%;
+    transform:translate(-50%, -50%);
+    z-index:10;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:34px;
+    width:min(680px, 92vw);
+  }
+
+  .section-label{
+    font-size:12px;
+    letter-spacing:6px;
+    color:var(--c-text-dim);
+    text-transform:uppercase;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    align-self:stretch;
+    justify-content:center;
+  }
+  .section-label::before, .section-label::after{ content:''; width:40px; height:1px; background:var(--c-line); }
+
+  /* --- Party card --- */
+  .party-card{
+    width:100%;
+    background:var(--c-panel-glass-soft);
+    backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px);
+    border:1px solid var(--c-line);
+    clip-path:polygon(20px 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%, 0 20px);
+    padding:28px 30px 30px;
+    display:flex;
+    flex-direction:column;
+    gap:20px;
+  }
+
+  .party-actions{
+    display:flex;
+    gap:16px;
+    align-items:stretch;
+    flex-wrap:wrap;
+  }
+
+  .btn{
+    position:relative;
+    font-family:var(--f-display);
+    font-size:20px;
+    font-weight:600;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    padding:16px 26px;
+    border:1px solid var(--c-red-dim);
+    background:linear-gradient(180deg, rgba(255,36,64,0.14), rgba(255,36,64,0.03));
+    color:#fff;
+    cursor:pointer;
+    clip-path:polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+    transition:transform 0.18s ease, box-shadow 0.25s ease, background 0.25s ease, border-color 0.25s ease;
+  }
+  .btn:hover{
+    transform:translateY(-2px);
+    border-color:var(--c-red);
+    box-shadow:0 10px 26px rgba(255,36,64,0.22), 0 0 30px rgba(255,36,64,0.15);
+    background:linear-gradient(180deg, rgba(255,36,64,0.22), rgba(255,36,64,0.05));
+  }
+  .btn:active{ transform:translateY(0) scale(0.98); }
+
+  .btn.primary{ flex:1; min-width:180px; }
+
+  .join-group{
+    display:flex;
+    gap:12px;
+    flex:1.4;
+    min-width:260px;
+  }
+
+  .code-input{
+    flex:1;
+    background:rgba(0,0,0,0.35);
+    border:1px solid var(--c-line);
+    color:var(--c-text);
+    font-family:var(--f-display);
+    font-size:24px;
+    letter-spacing:10px;
+    text-align:center;
+    padding:12px 10px 10px 20px;
+    text-transform:uppercase;
+    clip-path:polygon(10px 0, 100% 0, 100% 100%, 0 100%, 0 10px);
+    transition:border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .code-input::placeholder{
+    color:var(--c-text-faint);
+    letter-spacing:4px;
+    font-size:13px;
+    font-family:var(--f-body);
+  }
+  .code-input:focus{
+    outline:none;
+    border-color:var(--c-red);
+    box-shadow:0 0 0 1px var(--c-red-glow), 0 0 20px rgba(255,36,64,0.12);
+  }
+
+  .btn.ghost{
+    background:transparent;
+    border:1px solid var(--c-line);
+    color:var(--c-text-dim);
+  }
+  .btn.ghost:hover{
+    border-color:var(--c-red-dim);
+    color:#fff;
+    background:rgba(255,36,64,0.08);
+    box-shadow:0 10px 24px rgba(255,36,64,0.14);
+  }
+
+  .helper-text{
+    font-size:11px;
+    letter-spacing:1px;
+    color:var(--c-text-faint);
+  }
+  .helper-text.error{ color:var(--c-red); }
+
+  /* --- Mode buttons --- */
+  .mode-row{
+    display:flex;
+    gap:20px;
+    width:100%;
+  }
+
+  .mode-btn{
+    position:relative;
+    flex:1;
+    padding:24px 22px 20px;
+    background:linear-gradient(180deg, rgba(20,22,24,0.6), rgba(8,9,10,0.7));
+    border:1px solid var(--c-line);
+    clip-path:polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px);
+    text-align:left;
+    cursor:not-allowed;
+    color:var(--c-disabled);
+    transition:all 0.3s ease;
+    overflow:hidden;
+  }
+
+  .mode-btn .mode-tag{
+    font-size:10px;
+    letter-spacing:3px;
+    text-transform:uppercase;
+    color:inherit;
+    opacity:0.7;
+  }
+  .mode-btn .mode-title{
+    font-family:var(--f-display);
+    font-size:32px;
+    font-weight:600;
+    letter-spacing:1px;
+    line-height:1.05;
+    margin-top:4px;
+    text-transform:uppercase;
+    color:inherit;
+  }
+  .mode-btn .mode-meta{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-top:14px;
+    padding-top:10px;
+    border-top:1px solid var(--c-line-soft);
+    font-size:11px;
+    letter-spacing:1px;
+    color:inherit;
+    opacity:0.7;
+  }
+  .mode-btn .arrow{
+    font-family:var(--f-display);
+    font-size:18px;
+    transition:transform 0.25s ease;
+  }
+
+  /* disabled state (default) */
+  .mode-btn[disabled]{
+    color:var(--c-disabled);
+    border-color:var(--c-line);
+    filter:grayscale(0.6);
+  }
+  .mode-btn[disabled] .mode-title{ color:#54585b; }
+  .mode-btn[disabled]::after{
+    content:'GRUP GEREKLİ';
+    position:absolute;
+    top:10px; right:14px;
+    font-size:9px;
+    letter-spacing:2px;
+    color:var(--c-text-faint);
+  }
+
+  /* active / enabled state */
+  .mode-btn.is-active{
+    cursor:pointer;
+    color:var(--c-text);
+    border-color:var(--c-red-dim);
+    filter:none;
+  }
+  .mode-btn.is-active .mode-title{ color:#f2f3f4; }
+  .mode-btn.is-active .mode-tag{ color:var(--c-red); opacity:1; }
+  .mode-btn.is-active::after{ content:''; }
+
+  .mode-btn.is-active:hover{
+    transform:translateY(-4px);
+    border-color:var(--c-red);
+    box-shadow:0 18px 40px rgba(255,36,64,0.2), 0 0 50px rgba(255,36,64,0.12);
+    background:linear-gradient(180deg, rgba(255,36,64,0.12), rgba(10,11,12,0.75));
+  }
+  .mode-btn.is-active:hover .mode-title{ text-shadow:0 0 16px rgba(255,36,64,0.5); }
+  .mode-btn.is-active:hover .arrow{ transform:translateX(6px); color:var(--c-red); }
+  .mode-btn.is-active:active{ transform:translateY(-1px) scale(0.99); }
+
+  /* ===========================================================
+     TOAST — small transient confirmation
+  =========================================================== */
+  .toast{
+    position:absolute;
+    bottom:38px; left:50%;
+    transform:translate(-50%, 16px);
+    z-index:20;
+    background:var(--c-panel-glass);
+    backdrop-filter:blur(10px);
+    border:1px solid var(--c-red-dim);
+    border-left:3px solid var(--c-red);
+    padding:12px 20px;
+    font-size:12px;
+    letter-spacing:1.5px;
+    color:var(--c-text);
+    text-transform:uppercase;
+    clip-path:polygon(10px 0, 100% 0, 100% 100%, 0 100%, 0 10px);
+    opacity:0;
+    pointer-events:none;
+    transition:opacity 0.3s ease, transform 0.3s ease;
+  }
+  .toast.show{ opacity:1; transform:translate(-50%, 0); }
+
+  /* ===========================================================
+     RESPONSIVE
+  =========================================================== */
+  @media (max-width: 820px){
+    .party-actions{ flex-direction:column; }
+    .join-group{ min-width:0; }
+    .mode-row{ flex-direction:column; }
+    .party-info{ width:200px; }
+  }
+
+  @media (max-width: 520px){
+    html, body{ overflow-y:auto; }
+    .arena{ height:auto; min-height:100vh; padding:24px 0 40px; }
+    .console{ position:relative; top:auto; left:auto; transform:none; margin:110px auto 0; }
+    .party-info{ position:relative; top:auto; right:auto; margin:0 auto 0; }
+    .logo-mark{ position:relative; top:auto; left:auto; justify-content:center; margin:20px auto 0; }
+  }
+
+</style>
+</head>
+<body>
+
+<div class="arena">
+
+  <div class="grid-layer"></div>
+  <div class="scanlines"></div>
+  <div class="vignette"></div>
+
+  <div class="reticle-frame">
+    <div class="bracket tl"></div>
+    <div class="bracket tr"></div>
+    <div class="bracket bl"></div>
+    <div class="bracket br"></div>
+  </div>
+
+  <!-- LOGO -->
+  <div class="logo-mark">
+    <span class="word">JESTER<span class="accent">:</span>PROTOCOL</span>
+    <span class="sub">LOBİ</span>
+  </div>
+
+  <!-- PARTY INFO PANEL (hidden until active) -->
+  <div class="party-info" id="partyInfo">
+    <div class="head">
+      <span class="label">Grup Aktif</span>
+      <span class="party-status-dot"></span>
+    </div>
+    <div class="code-row">
+      <span class="code-label">Grup Kodu</span>
+      <span class="code-value" id="partyCodeValue">----</span>
+    </div>
+    <div class="members">
+      <div class="member-chip you">Sen</div>
+      <div class="member-chip" id="memberSlot2">Boş</div>
+    </div>
+    <button class="leave-btn" id="leaveParty" type="button">Gruptan Ayrıl</button>
+  </div>
+
+  <!-- CENTER CONSOLE -->
+  <div class="console">
+
+    <!-- Party System -->
+    <div class="party-card">
+      <span class="section-label">Grup Yönetimi</span>
+
+      <div class="party-actions">
+        <button class="btn primary" id="createParty" type="button">Grup Oluştur</button>
+
+        <div class="join-group">
+          <input
+            class="code-input"
+            id="joinCodeInput"
+            type="text"
+            inputmode="numeric"
+            maxlength="4"
+            placeholder="KOD ----"
+            aria-label="4 haneli grup kodu"
+          >
+          <button class="btn ghost" id="joinParty" type="button">Gruba Katıl</button>
+        </div>
+      </div>
+
+      <span class="helper-text" id="partyHelper">Bir grup oluştur ya da 4 haneli bir kodla mevcut bir gruba katıl.</span>
+    </div>
+
+    <!-- Game Modes -->
+    <div class="mode-row">
+      <button class="mode-btn" id="start1v1" type="button" disabled>
+        <span class="mode-tag">Grup İçi</span>
+        <div class="mode-title">1v1 Savaş Başlat</div>
+        <div class="mode-meta">
+          <span>Grup üyeni ile düello</span>
+          <span class="arrow">➜</span>
+        </div>
+      </button>
+
+      <button class="mode-btn" id="queue2v2" type="button" disabled>
+        <span class="mode-tag">Sıraya Gir</span>
+        <div class="mode-title">2v2 Eşleşme</div>
+        <div class="mode-meta">
+          <span>Rakip grup aranıyor</span>
+          <span class="arrow">➜</span>
+        </div>
+      </button>
+    </div>
+
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast"></div>
+
+</div>
+
+<script>
+  (function(){
+    const createBtn   = document.getElementById('createParty');
+    const joinBtn     = document.getElementById('joinParty');
+    const joinInput   = document.getElementById('joinCodeInput');
+    const leaveBtn    = document.getElementById('leaveParty');
+    const partyInfo   = document.getElementById('partyInfo');
+    const codeValue   = document.getElementById('partyCodeValue');
+    const memberSlot2 = document.getElementById('memberSlot2');
+    const helper      = document.getElementById('partyHelper');
+    const start1v1    = document.getElementById('start1v1');
+    const queue2v2    = document.getElementById('queue2v2');
+    const toast       = document.getElementById('toast');
+
+    let toastTimer = null;
+    function showToast(msg){
+      toast.textContent = msg;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
+    }
+
+    function generateCode(){
+      return String(Math.floor(1000 + Math.random() * 9000));
+    }
+
+    function setModesActive(active){
+      [start1v1, queue2v2].forEach(btn => {
+        btn.disabled = !active;
+        btn.classList.toggle('is-active', active);
+      });
+    }
+
+    function activateParty(code, joined){
+      codeValue.textContent = code;
+      partyInfo.classList.add('is-active');
+      memberSlot2.textContent = joined ? 'Kurucu' : 'Boş';
+      memberSlot2.classList.toggle('filled', joined);
+      setModesActive(true);
+      helper.textContent = 'Grup hazır. Bir savaş modu seç.';
+      createBtn.disabled = true;
+      createBtn.style.opacity = '0.5';
+      createBtn.style.cursor = 'not-allowed';
+      joinInput.disabled = true;
+      joinBtn.disabled = true;
+      joinBtn.style.opacity = '0.5';
+    }
+
+    function resetParty(){
+      partyInfo.classList.remove('is-active');
+      codeValue.textContent = '----';
+      memberSlot2.textContent = 'Boş';
+      memberSlot2.classList.remove('filled');
+      setModesActive(false);
+      helper.textContent = 'Bir grup oluştur ya da 4 haneli bir kodla mevcut bir gruba katıl.';
+      helper.classList.remove('error');
+      createBtn.disabled = false;
+      createBtn.style.opacity = '';
+      createBtn.style.cursor = '';
+      joinInput.disabled = false;
+      joinInput.value = '';
+      joinBtn.disabled = false;
+      joinBtn.style.opacity = '';
+    }
+
+    createBtn.addEventListener('click', () => {
+      const code = generateCode();
+      activateParty(code, false);
+      showToast('Grup oluşturuldu — Kod: ' + code);
+      // Socket.io entegrasyon noktası: socket.emit('party:create')
+    });
+
+    joinBtn.addEventListener('click', () => {
+      const code = joinInput.value.trim();
+      if (!/^\d{4}$/.test(code)) {
+        helper.textContent = 'Geçerli bir 4 haneli kod gir.';
+        helper.classList.add('error');
+        joinInput.focus();
+        return;
+      }
+      helper.classList.remove('error');
+      activateParty(code, true);
+      showToast('Gruba katıldın — Kod: ' + code);
+      // Socket.io entegrasyon noktası: socket.emit('party:join', { code })
+    });
+
+    joinInput.addEventListener('input', () => {
+      joinInput.value = joinInput.value.replace(/\D/g, '').slice(0, 4);
+    });
+
+    leaveBtn.addEventListener('click', () => {
+      resetParty();
+      showToast('Gruptan ayrıldın');
+      // Socket.io entegrasyon noktası: socket.emit('party:leave')
+    });
+
+    [start1v1, queue2v2].forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.disabled) return;
+        showToast(btn.id === 'start1v1' ? '1v1 savaş başlatılıyor...' : '2v2 kuyruğuna girildi...');
+        // Socket.io entegrasyon noktası: socket.emit(btn.id === 'start1v1' ? 'match:1v1' : 'queue:2v2')
+      });
+    });
+  })();
+</script>
+
+</body>
+</html>
